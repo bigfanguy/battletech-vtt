@@ -1,43 +1,57 @@
+import {onManageActiveEffect, prepareActiveEffectCategories} from "../helpers/effects.mjs";
+
 /**
  * Extend the basic ActorSheet with some very simple modifications
  * @extends {ActorSheet}
  */
-export class BoilerplateActorSheet extends ActorSheet {
+export class scriptActorSheet extends ActorSheet {
 
   /** @override */
   static get defaultOptions() {
     return mergeObject(super.defaultOptions, {
-      classes: ["boilerplate", "sheet", "actor"],
-      template: "systems/boilerplate/templates/actor/actor-sheet.html",
+      classes: ["battletech-vtt", "sheet", "actor"],
+      template: "systems/battletech-vtt/templates/actor/actor-sheet.html",
       width: 600,
       height: 600,
-      tabs: [{ navSelector: ".sheet-tabs", contentSelector: ".sheet-body", initial: "description" }]
+      tabs: [{ navSelector: ".sheet-tabs", contentSelector: ".sheet-body", initial: "features" }]
     });
+  }
+
+  /** @override */
+  get template() {
+    return `systems/battletech-vtt/templates/actor/actor-${this.actor.data.type}-sheet.html`;
   }
 
   /* -------------------------------------------- */
 
   /** @override */
   getData() {
-    let isOwner = this.actor.isOwner;
-    const data = super.getData();
+    // Retrieve the data structure from the base sheet. You can inspect or log
+    // the context variable to see the structure, but some key properties for
+    // sheets are the actor object, the data object, whether or not it's
+    // editable, the items array, and the effects array.
+    const context = super.getData();
 
-    // Redefine the template data references to the actor.
+    // Use a safe clone of the actor data for further operations.
     const actorData = this.actor.data.toObject(false);
-    data.actor = actorData;
-    data.data = actorData.data;
-    data.rollData = this.actor.getRollData.bind(this.actor);
 
-    // Owned items.
-    data.items = actorData.items;
-    data.items.sort((a, b) => (a.sort || 0) - (b.sort || 0));
+    // Add the actor's data to context.data for easier access, as well as flags.
+    context.data = actorData.data;
+    context.flags = actorData.flags;
 
-    // Prepare items.
-    if (this.actor.data.type == 'character') {
-      this._prepareCharacterItems(data);
+    // Prepare character data and items.
+    if (actorData.type == 'character') {
+      this._prepareItems(context);
+      this._prepareCharacterData(context);
     }
 
-    return data;
+    // Add roll data for TinyMCE editors.
+    context.rollData = context.actor.getRollData();
+
+    // Prepare active effects
+    context.effects = prepareActiveEffectCategories(this.actor.effects);
+
+    return context;
   }
 
   /**
@@ -47,29 +61,23 @@ export class BoilerplateActorSheet extends ActorSheet {
    *
    * @return {undefined}
    */
-  _prepareCharacterItems(sheetData) {
-    const actorData = sheetData.actor;
+  _prepareCharacterData(context) {
+  }
 
+  /**
+   * Organize and classify Items for Character sheets.
+   *
+   * @param {Object} actorData The actor to prepare.
+   *
+   * @return {undefined}
+   */
+  _prepareItems(context) {
     // Initialize containers.
     const gear = [];
     const features = [];
-    const spells = {
-      0: [],
-      1: [],
-      2: [],
-      3: [],
-      4: [],
-      5: [],
-      6: [],
-      7: [],
-      8: [],
-      9: []
-    };
 
     // Iterate through items, allocating to containers
-    // let totalWeight = 0;
-    for (let i of sheetData.items) {
-      let item = i.data;
+    for (let i of context.items) {
       i.img = i.img || DEFAULT_TOKEN;
       // Append to gear.
       if (i.type === 'item') {
@@ -79,19 +87,12 @@ export class BoilerplateActorSheet extends ActorSheet {
       else if (i.type === 'feature') {
         features.push(i);
       }
-      // Append to spells.
-      else if (i.type === 'spell') {
-        if (i.data.spellLevel != undefined) {
-          spells[i.data.spellLevel].push(i);
-        }
-      }
     }
 
     // Assign and return
-    sheetData.gear = gear;
-    sheetData.features = features;
-    sheetData.spells = spells;
-  }
+    context.gear = gear;
+    context.features = features;
+   }
 
   /* -------------------------------------------- */
 
@@ -99,18 +100,19 @@ export class BoilerplateActorSheet extends ActorSheet {
   activateListeners(html) {
     super.activateListeners(html);
 
-    // Everything below here is only needed if the sheet is editable
-    if (!this.options.editable) return;
-
-    // Add Inventory Item
-    html.find('.item-create').click(this._onItemCreate.bind(this));
-
-    // Update Inventory Item
+    // Render the item sheet for viewing/editing prior to the editable check.
     html.find('.item-edit').click(ev => {
       const li = $(ev.currentTarget).parents(".item");
       const item = this.actor.items.get(li.data("itemId"));
       item.sheet.render(true);
     });
+
+    // -------------------------------------------------------------
+    // Everything below here is only needed if the sheet is editable
+    if (!this.isEditable) return;
+
+    // Add Inventory Item
+    html.find('.item-create').click(this._onItemCreate.bind(this));
 
     // Delete Inventory Item
     html.find('.item-delete').click(ev => {
@@ -119,6 +121,9 @@ export class BoilerplateActorSheet extends ActorSheet {
       item.delete();
       li.slideUp(200, () => this.render(false));
     });
+
+    // Active Effect management
+    html.find(".effect-control").click(ev => onManageActiveEffect(ev, this.actor));
 
     // Rollable abilities.
     html.find('.rollable').click(this._onRoll.bind(this));
@@ -171,13 +176,25 @@ export class BoilerplateActorSheet extends ActorSheet {
     const element = event.currentTarget;
     const dataset = element.dataset;
 
+    // Handle item rolls.
+    if (dataset.rollType) {
+      if (dataset.rollType == 'item') {
+        const itemId = element.closest('.item').dataset.itemId;
+        const item = this.actor.items.get(itemId);
+        if (item) return item.roll();
+      }
+    }
+
+    // Handle rolls that supply the formula directly.
     if (dataset.roll) {
+      let label = dataset.label ? `[roll] ${dataset.label}` : '';
       let roll = new Roll(dataset.roll, this.actor.getRollData());
-      let label = dataset.label ? `Rolling ${dataset.label}` : '';
-      roll.roll().toMessage({
+      roll.toMessage({
         speaker: ChatMessage.getSpeaker({ actor: this.actor }),
-        flavor: label
+        flavor: label,
+        rollMode: game.settings.get('core', 'rollMode'),
       });
+      return roll;
     }
   }
 

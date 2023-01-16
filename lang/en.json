@@ -1,1 +1,9 @@
-{}
+{
+
+  "BATTLETECH-VTT.EffectCreate": "Create Effect",
+  "BATTLETECH-VTT.EffectToggle": "Toggle Effect",
+  "BATTLETECH-VTT.EffectEdit": "Edit Effect",
+  "BATTLETECH-VTT.EffectDelete": "Delete Effect",
+
+  "BATTLETECH-VTT.Add": "Add"
+}

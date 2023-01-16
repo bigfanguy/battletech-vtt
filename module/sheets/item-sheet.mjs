@@ -2,12 +2,12 @@
  * Extend the basic ItemSheet with some very simple modifications
  * @extends {ItemSheet}
  */
-export class BoilerplateItemSheet extends ItemSheet {
+export class scriptItemSheet extends ItemSheet {
 
   /** @override */
   static get defaultOptions() {
     return mergeObject(super.defaultOptions, {
-      classes: ["boilerplate", "sheet", "item"],
+      classes: ["battletech-vtt", "sheet", "item"],
       width: 520,
       height: 480,
       tabs: [{ navSelector: ".sheet-tabs", contentSelector: ".sheet-body", initial: "description" }]
@@ -16,7 +16,7 @@ export class BoilerplateItemSheet extends ItemSheet {
 
   /** @override */
   get template() {
-    const path = "systems/boilerplate/templates/item";
+    const path = "systems/battletech-vtt/templates/item";
     // Return a single sheet for all item types.
     // return `${path}/item-sheet.html`;
 
@@ -30,27 +30,23 @@ export class BoilerplateItemSheet extends ItemSheet {
   /** @override */
   getData() {
     // Retrieve base data structure.
-    const data = super.getData();
+    const context = super.getData();
 
-    // Grab the item's data.
-    const itemData = data.data;
+    // Use a safe clone of the item data for further operations.
+    const itemData = context.item.data;
 
-    // Re-define the template data references.
-    data.item = itemData;
-    data.data = itemData.data;
+    // Retrieve the roll data for TinyMCE editors.
+    context.rollData = {};
+    let actor = this.object?.parent ?? null;
+    if (actor) {
+      context.rollData = actor.getRollData();
+    }
 
-    return data;
-  }
+    // Add the actor's data to context.data for easier access, as well as flags.
+    context.data = itemData.data;
+    context.flags = itemData.flags;
 
-  /* -------------------------------------------- */
-
-  /** @override */
-  setPosition(options = {}) {
-    const position = super.setPosition(options);
-    const sheetBody = this.element.find(".sheet-body");
-    const bodyHeight = position.height - 192;
-    sheetBody.css("height", bodyHeight);
-    return position;
+    return context;
   }
 
   /* -------------------------------------------- */
@@ -60,7 +56,7 @@ export class BoilerplateItemSheet extends ItemSheet {
     super.activateListeners(html);
 
     // Everything below here is only needed if the sheet is editable
-    if (!this.options.editable) return;
+    if (!this.isEditable) return;
 
     // Roll handlers, click handlers, etc. would go here.
   }
